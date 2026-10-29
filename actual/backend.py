@@ -11,7 +11,7 @@ def run(sql, params=()):
         cur = conn.cursor()
         cur.execute(sql, params)
         conn.commit()
-        return cur.fetchall
+        return cur.fetchall()
     finally:
         conn.close()
 
@@ -67,7 +67,7 @@ def get_voter(voter_id):
 
 def add_voter(voter_id, password, first, mid, last):
     # raiises pymysql.err.integrityerror if the id already exists
-    run("""INSERT INTO voters (voterID, voterPass, voterFName, voterMName, voterLName
+    run("""INSERT INTO voters (voterID, voterPass, voterFName, voterMName, voterLName)
            VALUES (%s, %s, %s, %s, %s)""", (voter_id, password, first, mid, last))
 
 def update_voter(voter_id, password, first, mid, last):
@@ -94,7 +94,7 @@ def check_login(voter_id, password):
 
 def submit_votes(voter_id, picks):
     """picks = {posID: [candID, ...]}. Returns None on success, else an error message."""
-    seats = {r[0]: r[1] for r in get_positions(active_only=True)}
+    seats = {r[0]: int(r[2]) for r in get_positions(active_only=True)}
     total = 0
     for pos_id, cand_ids in picks.items():
         if pos_id not in seats:

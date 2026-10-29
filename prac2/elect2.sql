@@ -10,4 +10,4 @@ CREATE TABLE positions(
     posID INT AUTO_INCREMENT PRIMARY KEY,
     posName VARCHAR(50) NOT NULL,
     numOfPositions INT NOT NULL,
-    posStat  VARCHAR(10) NOT NULL DEFAULT
+    posStat  VARCHAR(10) NOT NULL DEFAULTwwwwwwwwww
