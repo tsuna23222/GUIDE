@@ -1,6 +1,6 @@
 import pymysql
 
-CONFIG = {"host": "localhost", "user": "root", "password": "NewPassword", "database": "election"}
+CONFIG = {"host": "localhost", "user": "root", "password": "Election123", "database": "election"}
 
 def connect():
     return pymysql.connect(**CONFIG)

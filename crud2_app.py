@@ -38,9 +38,10 @@ def setup_database():
 
     columns = {row[1] for row in run ("PRAGMA table_info(voters)")}
     if "voted" not in columns:
-        run("ALTER TABLE VOTERS ADD COLUMN voted TEXT NOT NULL DEFAULT 'NO'")
+        run("ALTER TABLE voters ADD COLUMN voted TEXT NOT NULL DEFAULT 'No'")
         run("""UPDATE voters SET voted = 'Yes'
                WHERE voterID IN (SELECT voterID FROM votes)""")
+    run("UPDATE voters SET voted = 'No' WHERE voted = 'NO'")
 
 
 import tkinter as tk
@@ -236,7 +237,7 @@ def cand_deactivate():
     if cid is None:
         return
     if messagebox.askyesno("Confirm", "Deactivate this candidate?"):
-        run("UPDATE candidates SDET candStat = 'Inactive' WHERE candID =?", (int(cid),))
+        run("UPDATE candidates SET candStat = 'Inactive' WHERE candID =?", (int(cid),))
         cand_clear()
         cand_refresh()
 
