@@ -1,472 +1,572 @@
+"""
+Election System - Capstone Project 2 Skills Test
+Python + tkinter (UI) + sqlite3 (database). No pip installs needed.
+
+Run:  python crud2_app.py
+The database file (election.db) is created next to this script on first run.
+"""
+import os
 import sqlite3
-
-DB = "election.db"
-
-def run(sql, params=()):
-    conn = sqlite3.connect(DB)
-    cur = conn.cursor()
-    cur.execute(sql, params)
-    conn.commit()
-    rows = cur.fetchall()
-    conn.close()
-    return rows
-
-def setup_database():
-    run("""CREATE TABLE IF NOT EXISTS positions(
-        posID INTEGER PRIMARY KEY AUTOINCREMENT,
-        posName TEXT NOT NULL,
-        numOfPositions INTEGER NOT NULL,
-        posStat TEXT NOT NULL DEFAULT 'Active')""")
-    run("""CREATE TABLE IF NOT EXISTS candidates(
-        candID INTEGER PRIMARY KEY AUTOINCREMENT,
-        candFName TEXT NOT NULL,
-        candMName TEXT,
-        candLName TEXT NOT NULL,
-        posID INTEGER NOT NULL,
-        candStat TEXT NOT NULL DEFAULT 'Active')""")
-    run("""CREATE TABLE IF NOT EXISTS voters(
-        voterID TEXT PRIMARY KEY,
-        voterPass TEXT NOT NULL,
-        voterFName TEXT NOT NULL,
-        voterMName TEXT,
-        voterLName TEXT NOT NULL,
-        voterStat TEXT NOT NULL DEFAULT 'Active')""")
-    run("""CREATE TABLE IF NOT EXISTS votes(
-        posID INTEGER NOT NULL,
-        voterID TEXT NOT NULL,
-        candID INTEGER NOT NULL)""")
-
-    columns = {row[1] for row in run ("PRAGMA table_info(voters)")}
-    if "voted" not in columns:
-        run("ALTER TABLE voters ADD COLUMN voted TEXT NOT NULL DEFAULT 'No'")
-        run("""UPDATE voters SET voted = 'Yes'
-               WHERE voterID IN (SELECT voterID FROM votes)""")
-    run("UPDATE voters SET voted = 'No' WHERE voted = 'NO'")
-
-
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-# UI HELPERS
-def make_table(parent, headings, row):
-    table = ttk.Treeview(parent, columns=headings, show="headings", height=10)
-    for h in headings:
-        table.heading(h, text=h)
-        table.column(h, width=100)
-    table.grid(row=row, column=0, columnspan=6, padx=10, pady=10)
-    return table
-
-def clear_table(table):
-    for item in table.get_children():
-        table.delete(item)
-
-def fill_table(table, rows):
-    clear_table(table)
-    for row in rows:
-        table.insert("", tk.END, iid=str(row[0]), values=row)
-
-def get_selected(table):
-    sel = table.selection()
-    if not sel:
-        messagebox.showwarning("No selection", "Click a Row First")
-        return None
-    return sel[0]
-
-# window with tabs
-setup_database()
-root = tk.Tk()
-root.title("Election System")
-
-tabs = ttk.Notebook(root)
-tabs.pack(fill="both", expand=True)
-
-tab_pos = ttk.Frame(tabs)
-tab_cand = ttk.Frame(tabs)
-tab_voter = ttk.Frame(tabs)
-tab_vote = ttk.Frame(tabs)
-tab_results = ttk.Frame(tabs)
-tab_winners = ttk.Frame(tabs)
-
-tabs.add(tab_pos, text="Positions")
-tabs.add(tab_cand, text="Candidates")
-tabs.add(tab_voter, text="Voters")
-tabs.add(tab_vote, text="Vote")
-tabs.add(tab_results, text="Results")
-tabs.add(tab_winners, text="Winners")
+DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "election.db")
 
 
-# postions tab
-tk.Label(tab_pos, text="Position name").grid(row=0, column=0, padx=5, pady=5)
-pos_name = tk.Entry(tab_pos)
-pos_name.grid(row=0, column=1)
-tk.Label(tab_pos, text="Number of seats").grid(row=1, column=0, padx=5, pady=5)
-pos_num = tk.Entry(tab_pos)
-pos_num.grid(row=1, column=1)
-
-pos_table = make_table(tab_pos, ("ID", "Position", "Seats", "Status"), row=3)
-
-def pos_refresh():
-    fill_table(pos_table, run("SELECT posID, posName, numOfPositions, posStat FROM positions"))
-
-def pos_clear():
-    pos_name.delete(0, tk.END)
-    pos_num.delete(0, tk.END)
-
-def pos_read_form():
-    name = pos_name.get().strip()
-    num = pos_num.get().strip()
-    if not name or not num.isdigit() or int(num) < 1:
-        messagebox.showwarning("Invalid", "Enter a name and a seat count of 1 or more.")
-        return None
-    return name, int(num)
-
-def pos_add():
-    data = pos_read_form()
-    if data is None:
-        return
-    run("INSERT INTO positions (posName, numOfPositions) VALUES (?, ?)", data)
-    pos_clear()
-    pos_refresh()
-
-def pos_pick(event):
-    sel = pos_table.selection()
-    if not sel:
-        return
-    row = run("SELECT posName, numOfPositions FROM positions WHERE posID = ?", (sel[0],))[0]
-    pos_clear()
-    pos_name.insert(0, row[0])
-    pos_num.insert(0, row[1])
-
-def pos_update():
-    pid = get_selected(pos_table)
-    data = pos_read_form()
-    if pid is None or data is None:
-        return
-    run("UPDATE positions SET posName = ?, numOfPositions = ? WHERE posID = ?", data + (int(pid),))
-    pos_clear()
-    pos_refresh()
-
-def pos_deactivate():
-    pid = get_selected(pos_table)
-    if pid is None:
-        return
-    if messagebox.askyesno("Confirm", "Deactivate This position"):
-        run("UPDATE positions SET posStat = 'Inactive' WHERE posID =?", (int(pid),))
-        pos_clear()
-        pos_refresh()
-
-tk.Button(tab_pos, text="Add", width=10, command=pos_add).grid(row=2, column=0, pady=5)
-tk.Button(tab_pos, text="Update", width=10, command=pos_update).grid(row=2, column=1, pady=5)
-tk.Button(tab_pos, text="Deactivate", width=10, command=pos_deactivate).grid(row=2, column=2, pady=5)
-pos_table.bind("<<TreeviewSelect>>", pos_pick)
-
-
-# CANDIDATES TAB
-tk.Label(tab_cand, text="First name").grid(row=0, column=0, padx=5, pady=5)
-cand_first = tk.Entry(tab_cand)
-cand_first.grid(row=0, column=1)
-tk.Label(tab_cand, text="Middle name").grid(row=1, column=0, padx=5, pady=5)
-cand_mid = tk.Entry(tab_cand)
-cand_mid.grid(row=1, column=1)
-tk.Label(tab_cand, text="Last name").grid(row=0, column=2, padx=5)
-cand_last = tk.Entry(tab_cand)
-cand_last.grid(row=0, column=3)
-tk.Label(tab_cand, text="Position").grid(row=1, column=2, padx=5)
-cand_pos = ttk.Combobox(tab_cand, state="readonly")
-cand_pos.grid(row=1, column=3)
-
-cand_table = make_table(tab_cand, ("ID", "First", "Middle", "Last", "Position", "Status"), row=3)
-
-def pos_choices():
-    rows = run("SELECT posID, posName FROM positions WHERE posStat = 'Active'")
-    return [f"{r[0]} - {r[1]}" for r in rows]
-
-def cand_refresh():
-    fill_table(cand_table,  run("""
-    SELECT c.candID, c.candFName, c.candMName, c.candLName, p.posName, c.candStat
-    FROM candidates c JOIN positions p ON p.posID = c.posID"""))
-
-def cand_clear():
-    for e in (cand_first, cand_mid, cand_last):
-        e.delete(0, tk.END)
-    cand_pos.set("")
-
-def cand_read_form():
-    first = cand_first.get().strip()
-    mid = cand_mid.get().strip()
-    last = cand_last.get().strip()
-    pos = cand_pos.get()
-    if not first or not last or not pos:
-        messagebox.showwarning("Invalid", "First name, last name, and position are required.")
-        return None
-    return first, mid, last, int(pos.split(" - ")[0])
-
-def cand_add():
-    data = cand_read_form()
-    if data is None:
-        return
-    run("INSERT INTO candidates (candFName, candMName, candLName, posID) VALUES (?, ?, ?, ?)", data)
-    cand_clear()
-    cand_refresh()
-
-def cand_pick(event):
-    sel = cand_table.selection()
-    if not sel:
-        return
-    r = run(""" SELECT c.candFName, c.candMName, c.candLName, p.posID, p.posName
-                FROM candidates c JOIN positions p ON p.posID = c.posID
-                WHERE c.candID = ?""", (sel[0],))[0]
-    cand_clear()
-    cand_first.insert(0, r[0])
-    cand_mid.insert(0, r[1] or "")
-    cand_last.insert(0, r[2])
-    cand_pos.set(f"{r[3]} - {r[4]}")
-
-def cand_update():
-    cid = get_selected(cand_table)
-    data = cand_read_form()
-    if cid is None or data is None:
-        return
-    run("""UPDATE candidates SET candFName = ?, candMName = ?, candLName = ?, posID = ?
-            WHERE candID = ?""", data + (int(cid),))
-    cand_clear()
-    cand_refresh()
-
-def cand_deactivate():
-    cid = get_selected(cand_table)
-    if cid is None:
-        return
-    if messagebox.askyesno("Confirm", "Deactivate this candidate?"):
-        run("UPDATE candidates SET candStat = 'Inactive' WHERE candID =?", (int(cid),))
-        cand_clear()
-        cand_refresh()
-
-tk.Button(tab_cand, text="Add", width=10, command=cand_add).grid(row=2, column=0, pady=5)
-tk.Button(tab_cand, text="Update", width=10, command=cand_update).grid(row=2, column=1, pady=5)
-tk.Button(tab_cand, text="Deactivate", width=10, command=cand_deactivate).grid(row=2, column=2, pady=5)
-cand_table.bind("<<TreeviewSelect>>", cand_pick)
-
-# VOTERS TAB
-tk.Label(tab_voter, text="Voter ID").grid(row=0, column=0, padx=5, pady=5)
-voter_id = tk.Entry(tab_voter)
-voter_id.grid(row=0, column=1)
-tk.Label(tab_voter,text="Password").grid(row=1, column=0, padx=5, pady=5)
-voter_pass = tk.Entry(tab_voter, show="*")
-voter_pass.grid(row=1, column=1)
-tk.Label(tab_voter, text="First name").grid(row=0, column=2, padx=5)
-voter_first = tk.Entry(tab_voter)
-voter_first.grid(row=0, column=3)
-tk.Label(tab_voter, text="Middle name").grid(row=1, column=2, padx=5)
-voter_mid = tk.Entry(tab_voter)
-voter_mid.grid(row=1, column=3)
-tk.Label(tab_voter, text="Last name").grid(row=2, column=2, padx=5, pady=5)
-voter_last = tk.Entry(tab_voter)
-voter_last.grid(row=2, column=3)
-
-voter_table = make_table(tab_voter, ("ID", "First", "Middle", "Last", "Status", "Voted"), row=4)
-
-def voter_refresh():
-    fill_table(voter_table, run(
-        "SELECT voterID, voterFName, voterMName, voterLName, voterStat, voted FROM voters"))
-
-def voter_clear():
-    for e in (voter_id, voter_pass, voter_first, voter_mid, voter_last):
-        e.delete(0, tk.END)
-
-def voter_read_form():
-    vid = voter_id.get().strip()
-    pw = voter_pass.get()
-    first = voter_first.get().strip()
-    mid = voter_mid.get().strip()
-    last = voter_last.get().strip()
-    if not vid or not pw or not first or not last:
-        messagebox.showwarning("Invalid", "ID, password, first name, and last name are required.")
-        return None
-    return vid, pw, first, mid, last
-
-def voter_add():
-    data = voter_read_form()
-    if data is None:
-        return
+# ----------------------------------------------------------------------
+# 1. DATABASE LAYER
+# ----------------------------------------------------------------------
+def run(sql, params=(), fetch=False):
+    """Open -> execute -> commit -> close. Returns rows if fetch=True."""
+    con = sqlite3.connect(DB)
     try:
-        run("""INSERT INTO voters (voterID, voterPass, voterFName, voterMName, voterLName) VALUES (?, ?, ?, ?, ?)""", data)
+        cur = con.execute(sql, params)
+        rows = cur.fetchall() if fetch else None
+        con.commit()
+        return rows
+    finally:
+        con.close()
 
-    except sqlite3.IntegrityError:
-        messagebox.showerror("Duplicate", "That voter ID already Exists.")
+
+def init_db():
+    con = sqlite3.connect(DB)
+    con.executescript("""
+    CREATE TABLE IF NOT EXISTS positions (
+        posID          INTEGER PRIMARY KEY AUTOINCREMENT,
+        posName        TEXT NOT NULL,
+        numOfPositions INTEGER NOT NULL DEFAULT 1,
+        posStat        INTEGER NOT NULL DEFAULT 1
+    );
+    CREATE TABLE IF NOT EXISTS voters (
+        voterID    TEXT PRIMARY KEY,
+        voterPass  TEXT NOT NULL,
+        voterFName TEXT NOT NULL,
+        voterMName TEXT,
+        voterLName TEXT NOT NULL,
+        voterStat  INTEGER NOT NULL DEFAULT 1,
+        voted      INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE TABLE IF NOT EXISTS candidates (
+        candID    INTEGER PRIMARY KEY AUTOINCREMENT,
+        candFName TEXT NOT NULL,
+        candMName TEXT,
+        candLName TEXT NOT NULL,
+        posID     INTEGER NOT NULL,
+        candStat  INTEGER NOT NULL DEFAULT 1,
+        FOREIGN KEY (posID) REFERENCES positions(posID)
+    );
+    CREATE TABLE IF NOT EXISTS admins (
+        username TEXT PRIMARY KEY,
+        password TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS votes (
+        posID   INTEGER NOT NULL,
+        voterID TEXT    NOT NULL,
+        candID  INTEGER NOT NULL
+    );
+    """)
+    con.commit()
+    con.close()
+
+
+def seed_admin():
+    """Default admin account (change it!): admin / admin123"""
+    if run("SELECT COUNT(*) FROM admins", fetch=True)[0][0] == 0:
+        run("INSERT INTO admins (username, password) VALUES (?,?)", ("admin", "admin123"))
+
+
+def check_admin(username, password):
+    return bool(run("SELECT 1 FROM admins WHERE username=? AND password=?",
+                    (username, password), fetch=True))
+
+
+def check_voter(voter_id, password):
+    """Returns (first_name, None) if allowed, else (None, error_message)."""
+    row = run("SELECT voterFName, voterStat, voted FROM voters WHERE voterID=? AND voterPass=?",
+              (voter_id, password), fetch=True)
+    if not row:
+        return None, "Wrong voter ID or password."
+    fname, stat, voted = row[0]
+    if stat != 1:
+        return None, "Your voter account is not active."
+    if voted == 1:
+        return None, "You have already voted."
+    return fname, None
+
+
+def seed_if_empty():
+    """Small sample data so you can test right away."""
+    if run("SELECT COUNT(*) FROM positions", fetch=True)[0][0] > 0:
         return
-    voter_clear()
-    voter_refresh()
+    for name, n in [("President", 1), ("Vice President", 1), ("Senator", 3)]:
+        run("INSERT INTO positions (posName, numOfPositions) VALUES (?,?)", (name, n))
+    cands = [("Ana", "", "Reyes", 1), ("Ben", "", "Cruz", 1),
+             ("Cara", "", "Lopez", 2), ("Dan", "", "Tan", 2),
+             ("Eli", "", "Sy", 3), ("Faye", "", "Go", 3),
+             ("Gio", "", "Lim", 3), ("Hana", "", "Uy", 3)]
+    for c in cands:
+        run("INSERT INTO candidates (candFName,candMName,candLName,posID) VALUES (?,?,?,?)", c)
+    for i in range(1, 4):
+        run("INSERT INTO voters (voterID,voterPass,voterFName,voterLName) VALUES (?,?,?,?)",
+            (f"v{i:03d}", "1234", f"Voter{i}", "Test"))
 
-def voter_pick(event):
-    sel = voter_table.selection()
-    if not sel:
-        return
-    r = run("""SELECT voterPass, voterFName, voterMName, voterLName FROM voters WHERE voterID = ?""", (sel[0],))[0]
-    voter_clear()
-    voter_id.insert(0, sel[0])
-    voter_pass.insert(0, r[0])
-    voter_first.insert(0, r[1])
-    voter_mid.insert(0, r[2] or "")
-    voter_last.insert(0, r[3])
+ 
+# ----------------------------------------------------------------------
+# 2. REUSABLE CRUD TAB (used for Positions, Candidates, Voters)
+# ----------------------------------------------------------------------
+class CrudTab(ttk.Frame):
+    """
+    fields: list of dicts
+      col       -> column name in the table
+      label     -> text shown on the form
+      kind      -> 'entry' (default), 'int', or 'combo'
+      optional  -> True if it may be left blank
+      pk        -> True if it is the (user-typed) primary key: editable on Add only
+      values    -> function returning combobox values (for kind='combo')
+    auto_pk: name of an AUTOINCREMENT pk column (not typed by the user), or None
+    """
 
-def voter_update():
-    vid = get_selected(voter_table)
-    data = voter_read_form()
-    if vid is None or data is None:
-        return
-    # the id itself is not change we only use the selected rows id in where
-    run("""UPDATE voters SET voterPass = ?, voterFName = ?, voterMName = ?, voterLName = ?
-            WHERE voterID = ?""", data[1:] + (vid,))
-    voter_clear()
-    voter_refresh()
+    def __init__(self, parent, table, fields, status_col, auto_pk=None, extra_cols=()):
+        super().__init__(parent, padding=10)
+        self.table, self.fields = table, fields
+        self.status_col, self.auto_pk = status_col, auto_pk
+        self.extra_cols = list(extra_cols)          # shown in table, not in form
+        self.selected_key = None
+        self.widgets = {}
 
-def voter_deactivate():
-    vid = get_selected(voter_table)
-    if vid is None:
-        return
-    if messagebox.askyesno("Confirm", "Deactivate this voter?"):
-        run("UPDATE voters SET voterStat = 'Inactive' WHERE voterID =?", (vid,))
-        voter_clear()
-        voter_refresh()
+        # --- form ---
+        form = ttk.LabelFrame(self, text=f"{table.title()} Form", padding=10)
+        form.pack(fill="x")
+        for i, f in enumerate(fields):
+            ttk.Label(form, text=f["label"]).grid(row=i, column=0, sticky="w", pady=2)
+            if f.get("kind") == "combo":
+                w = ttk.Combobox(form, state="readonly", width=34)
+            else:
+                w = ttk.Entry(form, width=37)
+            w.grid(row=i, column=1, padx=8, pady=2, sticky="w")
+            self.widgets[f["col"]] = w
 
-tk.Button(tab_voter, text="Add", width=10, command=voter_add).grid(row=3, column=0, pady=5)
-tk.Button(tab_voter, text="Update", width=10, command=voter_update).grid(row=3, column=1, pady=5)
-tk.Button(tab_voter, text="Deactivate", width=10, command=voter_deactivate).grid(row=3, column=2, pady=5)
-voter_table.bind("<<TreeviewSelect>>", voter_pick)
+        # --- buttons ---
+        bar = ttk.Frame(form)
+        bar.grid(row=len(fields), column=0, columnspan=2, pady=(8, 0), sticky="w")
+        for text, cmd in [("Add", self.add), ("Update", self.update),
+                          ("Deactivate", lambda: self.set_status(0)),
+                          ("Activate", lambda: self.set_status(1)),
+                          ("Clear", self.clear)]:
+            ttk.Button(bar, text=text, command=cmd).pack(side="left", padx=3)
 
-# vote tab
-tk.Label(tab_vote, text="Voter ID").grid(row=0, column=0, padx=5, pady=5)
-login_id = tk.Entry(tab_vote)
-login_id.grid(row=0, column=1)
-tk.Label(tab_vote, text="Password").grid(row=0, column=2, padx=5)
-login_pass = tk.Entry(tab_vote, show="*")
-login_pass.grid(row=0, column=3)
+        # --- table ---
+        key_cols = [auto_pk] if auto_pk else []
+        self.cols = key_cols + [f["col"] for f in fields if f["col"] != auto_pk] \
+            + self.extra_cols + [status_col]
+        self.tree = ttk.Treeview(self, columns=self.cols, show="headings", height=12)
+        for c in self.cols:
+            self.tree.heading(c, text=c)
+            self.tree.column(c, width=95, anchor="w")
+        self.tree.pack(fill="both", expand=True, pady=(10, 0))
+        self.tree.bind("<<TreeviewSelect>>", self.on_select)
+        self.refresh()
 
-ballot_frame = tk.Frame(tab_vote)
-ballot_frame.grid(row=1, column=0, columnspan=6, padx=10, pady=10)
+    # ----- helpers -----
+    def pk_col(self):
+        if self.auto_pk:
+            return self.auto_pk
+        return next(f["col"] for f in self.fields if f.get("pk"))
 
-current = {"voter" : None}
-ballot = []
+    def read_form(self):
+        data = {}
+        for f in self.fields:
+            val = self.widgets[f["col"]].get().strip()
+            if f.get("kind") == "combo" and val:
+                val = val.split(" - ")[0]          # "2 - Vice President" -> "2"
+            if not val and not f.get("optional"):
+                messagebox.showwarning("Missing data", f"{f['label']} is required.")
+                return None
+            if f.get("kind") == "int" or f.get("kind") == "combo":
+                if not val.isdigit() or int(val) < 1:
+                    messagebox.showwarning("Invalid", f"{f['label']} must be a whole number >= 1.")
+                    return None
+            data[f["col"]] = val
+        return data
 
-def vote_login():
-    vid = login_id.get().strip()
-    pw = login_pass.get()
-    rows = run("SELECT voterStat, voted FROM voters WHERE voterID = ? AND voterPass = ?", (vid, pw))
-    if not rows:
-        messagebox.showerror("Login failed", "Wrong voter ID or password.")
-        return
-    stat, voted = rows[0]
-    if stat != "Active":
-        messagebox.showerror("NOT allowed", "This voter is not Active.")
-        return
-    
-    if voted == "Yes":
-        messagebox.showerror("Not allowed", "You have already voted.")
-        return
-    current["voter"] = vid
-    build_ballot()
+    def refresh_combos(self):
+        for f in self.fields:
+            if f.get("kind") == "combo":
+                self.widgets[f["col"]]["values"] = f["values"]()
 
-def build_ballot():
-    for w in ballot_frame.winfo_children():
-        w.destroy()
-    ballot.clear()
-    positions = run("SELECT posID, posName, numOfPositions FROM positions WHERE posStat = 'Active'")
-    for col, (pid, pname, seats) in enumerate(positions):
-        box = tk.LabelFrame(ballot_frame, text=f"{pname} (up to {seats})")
-        box.grid(row=0, column=col, padx=5, sticky="n")
-        lb = tk.Listbox(box, selectmode=tk.MULTIPLE, exportselection=False, width=22, height=12)
-        lb.pack(padx=5, pady=5)
-        cands = run("""SELECT candID, candFName, candLName FROM candidates
-                        WHERE posID = ? AND candStat = 'Active'""",(pid,))
-        for c in cands:
-            lb.insert(tk.END, f"{c[1]} {c[2]}")
-        ballot.append((pid, pname, seats, lb, [c[0] for c in cands]))
-        submit_btn.config(state="normal")
+    def refresh(self):
+        self.refresh_combos()
+        self.tree.delete(*self.tree.get_children())
+        for row in run(f"SELECT {', '.join(self.cols)} FROM {self.table}", fetch=True):
+            self.tree.insert("", "end", values=row)
+        # status shown as 1/0 -> keep grey for inactive rows
+        self.tree.tag_configure("off", foreground="gray")
+        for item in self.tree.get_children():
+            if str(self.tree.set(item, self.status_col)) == "0":
+                self.tree.item(item, tags=("off",))
 
-def vote_submit():
-    if current["voter"] is None:
-        return
-    picks = []
-    for pid, pname, seats, lb, cand_ids in ballot:
-        chosen = [cand_ids[i] for i in lb.curselection()]
-        if len(chosen) > seats:
-            messagebox.showwarning("Too many votes", f"{pname}: you may vote for at most {seats}.")
+    def clear(self):
+        self.selected_key = None
+        for w in self.widgets.values():
+            w.config(state="normal") if isinstance(w, ttk.Entry) else None
+            w.set("") if isinstance(w, ttk.Combobox) else w.delete(0, "end")
+        self.tree.selection_remove(self.tree.selection())
+
+    def on_select(self, _event=None):
+        sel = self.tree.selection()
+        if not sel:
             return
-        for cid in chosen:
-            picks.append((pid, current["voter"], cid))
-    if not picks:
-        messagebox.showwarning("Empty ballot", "Select at least one candidate.")
-        return
-    if not messagebox.askyesno("Confirm", "Submit your votes? You cannot vote again."):
-        return
+        row = dict(zip(self.cols, self.tree.item(sel[0], "values")))
+        self.selected_key = row[self.pk_col()]
+        for f in self.fields:
+            w, v = self.widgets[f["col"]], row[f["col"]]
+            if isinstance(w, ttk.Combobox):
+                match = [x for x in w["values"] if x.split(" - ")[0] == v]
+                w.set(match[0] if match else "")
+            else:
+                w.config(state="normal")
+                w.delete(0, "end")
+                w.insert(0, v)
+                if f.get("pk"):
+                    w.config(state="disabled")      # can't change a primary key
 
-    conn = sqlite3.connect(DB)
-    conn.executemany("INSERT INTO votes (posID, voterID, candID) VALUES (?, ?, ?)", picks)
-    conn.execute("UPDATE voters SET voted ='Yes' WHERE voterID =?", (current["voter"],))
-    conn.commit()
-    conn.close()
+    # ----- CRUD -----
+    def add(self):
+        data = self.read_form()
+        if data is None:
+            return
+        cols = ", ".join(data)
+        marks = ", ".join("?" for _ in data)
+        try:
+            run(f"INSERT INTO {self.table} ({cols}) VALUES ({marks})", tuple(data.values()))
+        except sqlite3.IntegrityError:
+            messagebox.showerror("Duplicate", "That ID already exists.")
+            return
+        self.clear()
+        self.refresh()
 
-    current["voter"] = None
-    for w in ballot_frame.winfo_children():
-        w.destroy()
-    ballot.clear()
-    submit_btn.config(state="disabled")
-    login_id.delete(0, tk.END)
-    login_pass.delete(0, tk.END)
-    messagebox.showinfo("Thank you", "your votes were recorded.")
+    def update(self):
+        if self.selected_key is None:
+            messagebox.showinfo("Select", "Click a row in the table first.")
+            return
+        # disabled entries can't be read reliably, so re-enable briefly
+        for f in self.fields:
+            if f.get("pk"):
+                self.widgets[f["col"]].config(state="normal")
+        data = self.read_form()
+        if data is None:
+            return
+        pk = self.pk_col()
+        data.pop(pk, None)                          # never SET the primary key
+        sets = ", ".join(f"{c}=?" for c in data)
+        run(f"UPDATE {self.table} SET {sets} WHERE {pk}=?",
+            tuple(data.values()) + (self.selected_key,))
+        self.clear()
+        self.refresh()
 
-tk.Button(tab_vote, text="Login", width=10, command=vote_login).grid(row=0, column=4, padx=5)
-submit_btn = tk.Button(tab_vote, text="Submit Votes", state="disabled", command=vote_submit)
-submit_btn.grid(row=2, column=0, columnspan=6, pady=5)
+    def set_status(self, value):
+        if self.selected_key is None:
+            messagebox.showinfo("Select", "Click a row in the table first.")
+            return
+        run(f"UPDATE {self.table} SET {self.status_col}=? WHERE {self.pk_col()}=?",
+            (value, self.selected_key))
+        self.clear()
+        self.refresh()
 
-# results TAB
-res_table = make_table(tab_results, ("Position / Candidate", "Total Votes", "Voting %"), row=0)
-res_table.column("Position / Candidate", width=260)
 
-def results_refresh():
-    clear_table(res_table)
-    for pid, pname in run("SELECT posID, posName FROM positions WHERE posStat = 'Active'"):
-        rows = run("""SELECT c.candFName || ' ' || c.candLName, COUNT(v.candID)
-                      FROM candidates c LEFT JOIN votes v ON v.candID = c.candID
-                      WHERE c.posID = ? AND c.candStat = 'Active'
+# ----------------------------------------------------------------------
+# 3. VOTING TAB
+# ----------------------------------------------------------------------
+class VotingTab(ttk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, padding=10)
+        self.voter = None
+        self.on_done = None  # set by App in voter-session mode
+        self.lists = {}     # posID -> (Listbox, [candIDs], limit, last_selection)
+
+        self.login = ttk.LabelFrame(self, text="Voter Login", padding=15)
+        ttk.Label(self.login, text="Voter ID").grid(row=0, column=0, sticky="w", pady=3)
+        ttk.Label(self.login, text="Password").grid(row=1, column=0, sticky="w", pady=3)
+        self.e_id = ttk.Entry(self.login, width=25)
+        self.e_pw = ttk.Entry(self.login, width=25, show="*")
+        self.e_id.grid(row=0, column=1, padx=8)
+        self.e_pw.grid(row=1, column=1, padx=8)
+        ttk.Button(self.login, text="Login", command=self.do_login).grid(row=2, column=1, sticky="e", pady=8)
+
+        self.ballot = ttk.Frame(self)
+        self.show_login()
+
+    def show_login(self):
+        if self.on_done:                           # voter-session mode: go back to app login
+            self.on_done()
+            return
+        self.voter = None
+        self.ballot.pack_forget()
+        self.e_id.delete(0, "end")
+        self.e_pw.delete(0, "end")
+        self.login.pack(pady=40)
+
+    def do_login(self):
+        vid, pw = self.e_id.get().strip(), self.e_pw.get()
+        fname, error = check_voter(vid, pw)
+        if error:
+            return messagebox.showerror("Login failed", error)
+        self.begin(vid, fname)
+
+    def begin(self, voter_id, fname):
+        """Start a ballot for an already-verified voter."""
+        self.voter = voter_id
+        self.build_ballot(fname)
+
+    def build_ballot(self, fname):
+        self.login.pack_forget()
+        for w in self.ballot.winfo_children():
+            w.destroy()
+        self.lists.clear()
+        self.ballot.pack(fill="both", expand=True)
+        ttk.Label(self.ballot, text=f"Welcome, {fname}! Select your candidates.",
+                  font=("Segoe UI", 11, "bold")).pack(anchor="w")
+
+        holder = ttk.Frame(self.ballot)
+        holder.pack(fill="both", expand=True, pady=8)
+        positions = run("SELECT posID, posName, numOfPositions FROM positions WHERE posStat=1", fetch=True)
+        for pid, pname, limit in positions:
+            cands = run("SELECT candID, candFName||' '||candLName FROM candidates "
+                        "WHERE posID=? AND candStat=1", (pid,), fetch=True)
+            box = ttk.LabelFrame(holder, text=f"{pname} (vote up to {limit})", padding=6)
+            box.pack(side="left", fill="both", expand=True, padx=4)
+            lb = tk.Listbox(box, selectmode="multiple", exportselection=False, height=12)
+            for _, name in cands:
+                lb.insert("end", name)
+            lb.pack(fill="both", expand=True)
+            state = {"last": ()}
+            lb.bind("<<ListboxSelect>>", lambda e, lb=lb, lim=limit, st=state, pn=pname:
+                    self.enforce_limit(lb, lim, st, pn))
+            self.lists[pid] = (lb, [c[0] for c in cands], limit)
+
+        bar = ttk.Frame(self.ballot)
+        bar.pack(anchor="e")
+        ttk.Button(bar, text="Cancel", command=self.show_login).pack(side="left", padx=4)
+        ttk.Button(bar, text="Submit Vote", command=self.submit).pack(side="left", padx=4)
+
+    def enforce_limit(self, lb, limit, state, pname):
+        sel = lb.curselection()
+        if len(sel) > limit:                       # too many -> undo the last click
+            for i in sel:
+                if i not in state["last"]:
+                    lb.selection_clear(i)
+            messagebox.showwarning("Limit reached", f"You can only vote for {limit} {pname}(s).")
+        state["last"] = lb.curselection()
+
+    def submit(self):
+        picks = []
+        for pid, (lb, cand_ids, limit) in self.lists.items():
+            chosen = [cand_ids[i] for i in lb.curselection()]
+            if len(chosen) > limit:
+                return messagebox.showwarning("Too many", "Too many selections.")
+            picks += [(pid, self.voter, cid) for cid in chosen]
+        if not picks and not messagebox.askyesno("No selection", "Submit an empty ballot?"):
+            return
+        if not messagebox.askyesno("Confirm", "Submit your vote? You cannot vote again."):
+            return
+        con = sqlite3.connect(DB)
+        try:                                       # one transaction: all or nothing
+            con.executemany("INSERT INTO votes (posID, voterID, candID) VALUES (?,?,?)", picks)
+            con.execute("UPDATE voters SET voted=1 WHERE voterID=?", (self.voter,))
+            con.commit()
+        finally:
+            con.close()
+        messagebox.showinfo("Thank you", "Your vote has been recorded.")
+        self.show_login()
+
+    def refresh(self):
+        pass
+
+
+# ----------------------------------------------------------------------
+# 4. RESULTS + WINNERS
+# ----------------------------------------------------------------------
+def get_tally():
+    """Returns {posID: {'name':..., 'slots':..., 'cands':[(name, votes), ...]}}"""
+    out = {}
+    pos = run("SELECT posID, posName, numOfPositions FROM positions WHERE posStat=1 ORDER BY posID", fetch=True)
+    for pid, pname, slots in pos:
+        rows = run("""SELECT c.candFName||' '||c.candLName, COUNT(v.candID)
+                      FROM candidates c
+                      LEFT JOIN votes v ON v.candID = c.candID
+                      WHERE c.posID=? AND c.candStat=1
                       GROUP BY c.candID
-                      ORDER BY COUNT(v.candID) DESC""", (pid,))
-        total = sum(r[1] for r in rows)
-        res_table.insert("", tk.END, values=(pname, "", ""))
-        for name, n in rows:
-            pct = (n / total * 100) if total else 0 
-            res_table.insert("", tk.END, values=("      " + name, n, f"{pct:.2f}"))
-# winners tab
-win_table = make_table(tab_winners, ("Elective Position", "Winner", "Tota; Votes"), row=0)
-win_table.column("Winner", width=200)
-
-def winners_refresh():
-    clear_table(win_table)
-    for pid, pname, seats in run(
-            "SELECT posID, posName, numOfPositions FROM positions WHERE posStat = 'Active'"):
-        rows = run("""SELECT c.candFName || ' ' || c.candLName, COUNT(v.candID)
-                      FROM candidates c LEFT JOIN votes v ON v.candID = c.candID
-                      WHERE c.posID = ? AND c.candStat = 'Active'
-                      GROUP BY c.candID
-                      HAVING COUNT(v.candID) > 0
-                      ORDER BY COUNT(v.candID) DESC
-                      LIMIT ?""", (pid, seats))
-        for name, n in rows:
-            win_table.insert("", tk.END, values=(pname, name, n))
+                      ORDER BY COUNT(v.candID) DESC, c.candID""", (pid,), fetch=True)
+        out[pid] = {"name": pname, "slots": slots, "cands": rows}
+    return out
 
 
-def refresh_all(event=None):
-    pos_refresh()
-    cand_pos["values"] = pos_choices()
-    cand_refresh()
-    voter_refresh()
-    results_refresh()
-    winners_refresh()
+class ResultsTab(ttk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, padding=10)
+        cols = ("Candidate", "Total Votes", "Voting %")
+        self.tree = ttk.Treeview(self, columns=cols, show="tree headings", height=18)
+        self.tree.heading("#0", text="Position")
+        self.tree.column("#0", width=200)
+        for c in cols:
+            self.tree.heading(c, text=c)
+            self.tree.column(c, width=140, anchor="center")
+        self.tree.pack(fill="both", expand=True)
+        self.tree.tag_configure("pos", font=("Segoe UI", 10, "bold"))
 
-tabs.bind("<<NotebookTabChanged>>", refresh_all)
-refresh_all()
-root.mainloop()
-    
+    def refresh(self):
+        self.tree.delete(*self.tree.get_children())
+        for data in get_tally().values():
+            total = sum(v for _, v in data["cands"])
+            parent = self.tree.insert("", "end", text=data["name"], open=True, tags=("pos",))
+            for name, votes in data["cands"]:
+                pct = f"{votes / total * 100:.2f}" if total else "0.00"
+                self.tree.insert(parent, "end", values=(name, votes, pct))
 
 
+class WinnersTab(ttk.Frame):
+    def __init__(self, parent):
+        super().__init__(parent, padding=10)
+        cols = ("Elective Position", "Winner", "Total Votes")
+        self.tree = ttk.Treeview(self, columns=cols, show="headings", height=18)
+        for c in cols:
+            self.tree.heading(c, text=c)
+            self.tree.column(c, width=200, anchor="center")
+        self.tree.pack(fill="both", expand=True)
 
+    def refresh(self):
+        self.tree.delete(*self.tree.get_children())
+        for data in get_tally().values():
+            # cands is already sorted by votes DESC; take the top N slots
+            for name, votes in data["cands"][:data["slots"]]:
+                if votes > 0:                       # no votes = no winner
+                    self.tree.insert("", "end", values=(data["name"], name, votes))
+
+
+# ----------------------------------------------------------------------
+# 5. MAIN WINDOW
+# ----------------------------------------------------------------------
+def position_choices():
+    return [f"{i} - {n}" for i, n in
+            run("SELECT posID, posName FROM positions WHERE posStat=1", fetch=True)]
+
+
+class App:
+    """Login screen -> Admin view (all tabs) or Voter view (ballot only)."""
+
+    def __init__(self, root):
+        self.root = root
+        root.title("Election System")
+        root.geometry("900x560")
+        self.container = ttk.Frame(root)
+        self.container.pack(fill="both", expand=True)
+        self.show_login()
+
+    def clear(self):
+        for w in self.container.winfo_children():
+            w.destroy()
+
+    # ---------- login screen ----------
+    def show_login(self):
+        self.clear()
+        box = ttk.LabelFrame(self.container, text="Election System Login", padding=20)
+        box.place(relx=0.5, rely=0.45, anchor="center")
+
+        role = tk.StringVar(value="admin")
+        r = ttk.Frame(box)
+        r.grid(row=0, column=0, columnspan=2, pady=(0, 8))
+        ttk.Radiobutton(r, text="Admin", variable=role, value="admin").pack(side="left", padx=10)
+        ttk.Radiobutton(r, text="Voter", variable=role, value="voter").pack(side="left", padx=10)
+
+        ttk.Label(box, text="Username / Voter ID").grid(row=1, column=0, sticky="w", pady=3)
+        ttk.Label(box, text="Password").grid(row=2, column=0, sticky="w", pady=3)
+        e_user = ttk.Entry(box, width=26)
+        e_pw = ttk.Entry(box, width=26, show="*")
+        e_user.grid(row=1, column=1, padx=8)
+        e_pw.grid(row=2, column=1, padx=8)
+        e_user.focus()
+
+        def attempt(_event=None):
+            user, pw = e_user.get().strip(), e_pw.get()
+            if role.get() == "admin":
+                if check_admin(user, pw):
+                    self.show_admin(user)
+                else:
+                    messagebox.showerror("Login failed", "Wrong username or password.")
+                    e_pw.delete(0, "end")
+            else:
+                fname, error = check_voter(user, pw)
+                if error:
+                    messagebox.showerror("Login failed", error)
+                    e_pw.delete(0, "end")
+                else:
+                    self.show_voter(user, fname)
+
+        ttk.Button(box, text="Login", command=attempt).grid(row=3, column=1, sticky="e", pady=10)
+        e_user.bind("<Return>", attempt)           # Enter key works too
+        e_pw.bind("<Return>", attempt)
+
+    def topbar(self, text):
+        bar = ttk.Frame(self.container)
+        bar.pack(fill="x", padx=6, pady=(6, 0))
+        ttk.Label(bar, text=text).pack(side="left")
+        ttk.Button(bar, text="Logout", command=self.show_login).pack(side="right")
+
+    # ---------- admin view ----------
+    def show_admin(self, username):
+        self.clear()
+        self.topbar(f"Logged in as admin: {username}")
+        nb = ttk.Notebook(self.container)
+        nb.pack(fill="both", expand=True, padx=6, pady=6)
+
+        tabs = {
+            "Positions": CrudTab(nb, "positions", [
+                {"col": "posName", "label": "Position Name"},
+                {"col": "numOfPositions", "label": "No. of Positions", "kind": "int"},
+            ], status_col="posStat", auto_pk="posID"),
+
+            "Candidates": CrudTab(nb, "candidates", [
+                {"col": "candFName", "label": "First Name"},
+                {"col": "candMName", "label": "Middle Name", "optional": True},
+                {"col": "candLName", "label": "Last Name"},
+                {"col": "posID", "label": "Position", "kind": "combo", "values": position_choices},
+            ], status_col="candStat", auto_pk="candID"),
+
+            "Voters": CrudTab(nb, "voters", [
+                {"col": "voterID", "label": "Voter ID", "pk": True},
+                {"col": "voterPass", "label": "Password"},
+                {"col": "voterFName", "label": "First Name"},
+                {"col": "voterMName", "label": "Middle Name", "optional": True},
+                {"col": "voterLName", "label": "Last Name"},
+            ], status_col="voterStat", extra_cols=["voted"]),
+
+            "Voting": VotingTab(nb),
+            "Results": ResultsTab(nb),
+            "Winners": WinnersTab(nb),
+        }
+        for name, frame in tabs.items():
+            nb.add(frame, text=name)
+        nb.bind("<<NotebookTabChanged>>",
+                lambda e: nb.nametowidget(nb.select()).refresh())
+
+    # ---------- voter view ----------
+    def show_voter(self, voter_id, fname):
+        self.clear()
+        self.topbar(f"Voter: {voter_id}")
+        tab = VotingTab(self.container)
+        tab.on_done = self.show_login              # after Submit/Cancel -> back to login
+        tab.pack(fill="both", expand=True)
+        tab.begin(voter_id, fname)
+
+
+def main():
+    init_db()
+    seed_admin()
+    seed_if_empty()
+    root = tk.Tk()
+    App(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
