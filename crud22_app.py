@@ -55,10 +55,6 @@ def init_db():
         candStat  INTEGER NOT NULL DEFAULT 1,
         FOREIGN KEY (posID) REFERENCES positions(posID)
     );
-    CREATE TABLE IF NOT EXISTS admins (
-        username TEXT PRIMARY KEY,
-        password TEXT NOT NULL
-    );
     CREATE TABLE IF NOT EXISTS votes (
         posID   INTEGER NOT NULL,
         voterID TEXT    NOT NULL,
@@ -67,17 +63,6 @@ def init_db():
     """)
     con.commit()
     con.close()
-
-
-def seed_admin():
-    """Default admin account (change it!): admin / admin123"""
-    if run("SELECT COUNT(*) FROM admins", fetch=True)[0][0] == 0:
-        run("INSERT INTO admins (username, password) VALUES (?,?)", ("admin", "admin123"))
-
-
-def check_admin(username, password):
-    return bool(run("SELECT 1 FROM admins WHERE username=? AND password=?",
-                    (username, password), fetch=True))
 
 
 def check_voter(voter_id, password):
@@ -281,7 +266,6 @@ class VotingTab(ttk.Frame):
     def __init__(self, parent):
         super().__init__(parent, padding=10)
         self.voter = None
-        self.on_done = None  # set by App in voter-session mode
         self.lists = {}     # posID -> (Listbox, [candIDs], limit, last_selection)
 
         self.login = ttk.LabelFrame(self, text="Voter Login", padding=15)
@@ -297,9 +281,6 @@ class VotingTab(ttk.Frame):
         self.show_login()
 
     def show_login(self):
-        if self.on_done:                           # voter-session mode: go back to app login
-            self.on_done()
-            return
         self.voter = None
         self.ballot.pack_forget()
         self.e_id.delete(0, "end")
@@ -311,11 +292,7 @@ class VotingTab(ttk.Frame):
         fname, error = check_voter(vid, pw)
         if error:
             return messagebox.showerror("Login failed", error)
-        self.begin(vid, fname)
-
-    def begin(self, voter_id, fname):
-        """Start a ballot for an already-verified voter."""
-        self.voter = voter_id
+        self.voter = vid
         self.build_ballot(fname)
 
     def build_ballot(self, fname):
@@ -451,120 +428,49 @@ def position_choices():
             run("SELECT posID, posName FROM positions WHERE posStat=1", fetch=True)]
 
 
-class App:
-    """Login screen -> Admin view (all tabs) or Voter view (ballot only)."""
-
-    def __init__(self, root):
-        self.root = root
-        root.title("Election System")
-        root.geometry("900x560")
-        self.container = ttk.Frame(root)
-        self.container.pack(fill="both", expand=True)
-        self.show_login()
-
-    def clear(self):
-        for w in self.container.winfo_children():
-            w.destroy()
-
-    # ---------- login screen ----------
-    def show_login(self):
-        self.clear()
-        box = ttk.LabelFrame(self.container, text="Election System Login", padding=20)
-        box.place(relx=0.5, rely=0.45, anchor="center")
-
-        role = tk.StringVar(value="admin")
-        r = ttk.Frame(box)
-        r.grid(row=0, column=0, columnspan=2, pady=(0, 8))
-        ttk.Radiobutton(r, text="Admin", variable=role, value="admin").pack(side="left", padx=10)
-        ttk.Radiobutton(r, text="Voter", variable=role, value="voter").pack(side="left", padx=10)
-
-        ttk.Label(box, text="Username / Voter ID").grid(row=1, column=0, sticky="w", pady=3)
-        ttk.Label(box, text="Password").grid(row=2, column=0, sticky="w", pady=3)
-        e_user = ttk.Entry(box, width=26)
-        e_pw = ttk.Entry(box, width=26, show="*")
-        e_user.grid(row=1, column=1, padx=8)
-        e_pw.grid(row=2, column=1, padx=8)
-        e_user.focus()
-
-        def attempt(_event=None):
-            user, pw = e_user.get().strip(), e_pw.get()
-            if role.get() == "admin":
-                if check_admin(user, pw):
-                    self.show_admin(user)
-                else:
-                    messagebox.showerror("Login failed", "Wrong username or password.")
-                    e_pw.delete(0, "end")
-            else:
-                fname, error = check_voter(user, pw)
-                if error:
-                    messagebox.showerror("Login failed", error)
-                    e_pw.delete(0, "end")
-                else:
-                    self.show_voter(user, fname)
-
-        ttk.Button(box, text="Login", command=attempt).grid(row=3, column=1, sticky="e", pady=10)
-        e_user.bind("<Return>", attempt)           # Enter key works too
-        e_pw.bind("<Return>", attempt)
-
-    def topbar(self, text):
-        bar = ttk.Frame(self.container)
-        bar.pack(fill="x", padx=6, pady=(6, 0))
-        ttk.Label(bar, text=text).pack(side="left")
-        ttk.Button(bar, text="Logout", command=self.show_login).pack(side="right")
-
-    # ---------- admin view ----------
-    def show_admin(self, username):
-        self.clear()
-        self.topbar(f"Logged in as admin: {username}")
-        nb = ttk.Notebook(self.container)
-        nb.pack(fill="both", expand=True, padx=6, pady=6)
-
-        tabs = {
-            "Positions": CrudTab(nb, "positions", [
-                {"col": "posName", "label": "Position Name"},
-                {"col": "numOfPositions", "label": "No. of Positions", "kind": "int"},
-            ], status_col="posStat", auto_pk="posID"),
-
-            "Candidates": CrudTab(nb, "candidates", [
-                {"col": "candFName", "label": "First Name"},
-                {"col": "candMName", "label": "Middle Name", "optional": True},
-                {"col": "candLName", "label": "Last Name"},
-                {"col": "posID", "label": "Position", "kind": "combo", "values": position_choices},
-            ], status_col="candStat", auto_pk="candID"),
-
-            "Voters": CrudTab(nb, "voters", [
-                {"col": "voterID", "label": "Voter ID", "pk": True},
-                {"col": "voterPass", "label": "Password"},
-                {"col": "voterFName", "label": "First Name"},
-                {"col": "voterMName", "label": "Middle Name", "optional": True},
-                {"col": "voterLName", "label": "Last Name"},
-            ], status_col="voterStat", extra_cols=["voted"]),
-
-            "Voting": VotingTab(nb),
-            "Results": ResultsTab(nb),
-            "Winners": WinnersTab(nb),
-        }
-        for name, frame in tabs.items():
-            nb.add(frame, text=name)
-        nb.bind("<<NotebookTabChanged>>",
-                lambda e: nb.nametowidget(nb.select()).refresh())
-
-    # ---------- voter view ----------
-    def show_voter(self, voter_id, fname):
-        self.clear()
-        self.topbar(f"Voter: {voter_id}")
-        tab = VotingTab(self.container)
-        tab.on_done = self.show_login              # after Submit/Cancel -> back to login
-        tab.pack(fill="both", expand=True)
-        tab.begin(voter_id, fname)
-
-
 def main():
     init_db()
-    seed_admin()
     seed_if_empty()
+
     root = tk.Tk()
-    App(root)
+    root.title("Election System")
+    root.geometry("900x560")
+
+    nb = ttk.Notebook(root)
+    nb.pack(fill="both", expand=True, padx=6, pady=6)
+
+    tabs = {
+        "Positions": CrudTab(nb, "positions", [
+            {"col": "posName", "label": "Position Name"},
+            {"col": "numOfPositions", "label": "No. of Positions", "kind": "int"},
+        ], status_col="posStat", auto_pk="posID"),
+
+        "Candidates": CrudTab(nb, "candidates", [
+            {"col": "candFName", "label": "First Name"},
+            {"col": "candMName", "label": "Middle Name", "optional": True},
+            {"col": "candLName", "label": "Last Name"},
+            {"col": "posID", "label": "Position", "kind": "combo", "values": position_choices},
+        ], status_col="candStat", auto_pk="candID"),
+
+        "Voters": CrudTab(nb, "voters", [
+            {"col": "voterID", "label": "Voter ID", "pk": True},
+            {"col": "voterPass", "label": "Password"},
+            {"col": "voterFName", "label": "First Name"},
+            {"col": "voterMName", "label": "Middle Name", "optional": True},
+            {"col": "voterLName", "label": "Last Name"},
+        ], status_col="voterStat", extra_cols=["voted"]),
+
+        "Voting": VotingTab(nb),
+        "Results": ResultsTab(nb),
+        "Winners": WinnersTab(nb),
+    }
+    for name, frame in tabs.items():
+        nb.add(frame, text=name)
+
+    # refresh a tab each time it is opened so data is never stale
+    nb.bind("<<NotebookTabChanged>>",
+            lambda e: nb.nametowidget(nb.select()).refresh())
+
     root.mainloop()
 
 
