@@ -100,7 +100,7 @@ def seed_if_empty():
 # 2. REUSABLE CRUD TAB (used for Positions, Candidates, Voters)
 # ----------------------------------------------------------------------
 class CrudTab(ttk.Frame):
-    """
+    """ 
     fields: list of dicts
       col       -> column name in the table
       label     -> text shown on the form
@@ -324,7 +324,7 @@ class VotingTab(ttk.Frame):
         bar = ttk.Frame(self.ballot)
         bar.pack(anchor="e")
         ttk.Button(bar, text="Cancel", command=self.show_login).pack(side="left", padx=4)
-        ttk.Button(bar, text="Submit Vote", command=self.submit).pack(side="left", padx=4)
+        ttk.Button(bar, text="Submit Vote", command=self.s).pack(side="left", padx=4)
 
     def enforce_limit(self, lb, limit, state, pname):
         sel = lb.curselection()
